@@ -116,7 +116,7 @@ def ToneMapping(hdr, alpha=0.5, delta=1e-6, Lwhite=0 ):
 	Lw = hdr[:,:,0] * 0.299 + hdr[:,:,1] * 0.587 + hdr[:,:,2] * 0.114
 	LwBar = np.exp(np.mean(np.log(delta + Lw)))
 	Lm = alpha / LwBar * Lw
-	Ls = localTM(Lm,alpha,True)
+	Ls = localTM(Lm,alpha,False)
 	Ld = Lm * (1 + Lm * (Lwhite ** 2) )/ (1 + Ls) 
 
 	ldr = np.zeros(shape=hdr.shape)
