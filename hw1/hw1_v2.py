@@ -3,12 +3,12 @@
 from skimage import io
 import numpy as np
 import os
-from random import randint
+from random import randint,choice
 import cv2
 import sys
 import re
 
-IMGNO=2
+IMGNO=0
 DATADIR='aligned_' + str(IMGNO) + '/'
 DRAWROC=True
 
@@ -30,10 +30,26 @@ def sample(w,h,N=50):
 		s.append([randint(0,w-1),randint(0,h-1)])
 	return np.array(s)
 
+def sampleGAll(x):
+
+	# shape [imgNum,pic size(2d) ,channel]
+	# choose the middle pic and sample all g(.)
+	
+	midPic = x[ x.shape[0] // 2]
+	candidate = []
+	for i in range(256):
+		tmp = list(zip(*np.where( midPic == i)))
+		if tmp == []:
+			continue
+		else:
+			candidate.append( choice(tmp)[:2] )
+	return candidate
+		
 def getSamplePoint(x):
 	# random get sample point * 50
 	# S = sample(x.shape[1],x.shape[2])
-	S = [ [i,j] for i in range(0,x.shape[1],100) for j in range(0,x.shape[2],100) ]
+	# S = [ [i,j] for i in range(20,x.shape[1]-20,100) for j in range(20,x.shape[2]-20,100) ]
+	S = sampleGAll(x)
 	sp = []
 	for img in x:
 		tmp = []
@@ -168,13 +184,11 @@ if __name__ == '__main__':
 
 	if len(sys.argv) == 1 or sys.argv[1] != 'pre':
 		# read all the image
-		imgpool = readImg()
+		# the image is aligned(by aligment_MTB.py)
+		imgpool = readImg() # shape [imgNum,pic size(2d) ,channel]
 
 		# aligment
 		# imgpool = aligment(imgpool)
-
-
-		# shape [imgNum,pic size(2d) ,channel]
 
 		# getSamplePoint
 		sp = getSamplePoint(imgpool)
@@ -200,9 +214,6 @@ if __name__ == '__main__':
 		if DRAWROC == True:
 			drawRC(x.copy())
 
-		# we can use ln(Ei) directly, or need to implement pp.77 
-
-
 		# reconstruct the (ir-)radiance map
 		hdr = recon(imgpool,B,x,w)
 
@@ -213,6 +224,7 @@ if __name__ == '__main__':
 		np.save('hdr_raw_'+ str(IMGNO) + '.npy',hdr)
 	else:
 		hdr = np.load('hdr_raw_'+ str(IMGNO)  + '.npy')
+	
 	# tone mapping
 	ldr = ToneMapping(hdr)
 	cv2.imwrite('ldr_'+ str(IMGNO) + '.jpg', ldr[:,:,::-1])
