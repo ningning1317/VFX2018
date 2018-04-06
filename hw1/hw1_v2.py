@@ -6,12 +6,21 @@ import os
 from random import randint
 import cv2
 import sys
+import re
 
-DATADIR='exposures/'
+IMGNO=2
+DATADIR='aligned_' + str(IMGNO) + '/'
+DRAWROC=True
+
+def sorted_nicely(l):
+	# https://arcpy.wordpress.com/2012/05/11/sorting-alphanumeric-strings-in-python/
+    convert = lambda text: int(text) if text.isdigit() else text
+    alphanum_key = lambda key: [convert(c) for c in re.split('([0-9]+)', key)]
+    return sorted(l, key = alphanum_key)
 
 def readImg():
 	tmp = []
-	for i in sorted(os.listdir(DATADIR)):
+	for i in sorted_nicely(os.listdir(DATADIR)):
 		tmp.append(io.imread(DATADIR + i))
 	return np.array(tmp)
 
@@ -24,7 +33,7 @@ def sample(w,h,N=50):
 def getSamplePoint(x):
 	# random get sample point * 50
 	# S = sample(x.shape[1],x.shape[2])
-	S = [ [i,j] for i in range(0,x.shape[1],40) for j in range(0,x.shape[2],40) ]
+	S = [ [i,j] for i in range(0,x.shape[1],100) for j in range(0,x.shape[2],100) ]
 	sp = []
 	for img in x:
 		tmp = []
@@ -64,26 +73,23 @@ def buildLinearSystem(sp,B,lam,ch,w):
 		b[it][0] = 0
 		it += 1
 
-
-	print(it)
 	assert it == sp.shape[0] * sp.shape[1] + 1 + 254
-	print(A.shape,b.shape)
+
 	return A,b
 
 def solver(A,b):
-	print(b.shape)
+
 	U, s, V = np.linalg.svd(A, full_matrices=False)
-	print(U.shape, V.shape, s.shape)
+
 	s_plus = np.diag(1/s)
 	s_plus.resize(V.T.shape[1],U.T.shape[0])
-	# (306,306) (306,306) (306,905) (905, 1 )
 	x = np.dot(np.dot(np.dot(V.T, s_plus), U.T), b)
-	print(x.shape)
+
 	return x
 
 def recon(imgpool,B,x,w):
 	from tqdm import tqdm
-	print(imgpool.shape)
+
 	hdr = np.zeros(shape=(imgpool.shape[1],imgpool.shape[2],imgpool.shape[3]))
 	for i in tqdm(range(imgpool.shape[1])):
 		for j in range(imgpool.shape[2]):
@@ -93,14 +99,18 @@ def recon(imgpool,B,x,w):
 				for k in range(imgpool.shape[0]):
 					bot += w[imgpool[k][i][j][ch]]
 					top += w[imgpool[k][i][j][ch]] * (x[ch][imgpool[k][i][j][ch]] - B[k])
-				hdr[i][j][ch] = np.exp(top / bot) #### 
+				if bot == 0: # handle the divide by zero exp.
+					hdr[i][j][ch] = np.exp(imgpool[k//2][i][j][ch] - B[k])
+				else:
+					hdr[i][j][ch] = np.exp(top / bot) #### 
+				
 	return hdr
 
 def localTM(Lm,alpha,op=True):
 	if op == False:
 		return Lm
 	else:
-		print(Lm.shape)
+
 		Ls = np.zeros(shape=Lm.shape)
 		from scipy.ndimage.filters import gaussian_filter
 		blurred = []
@@ -132,15 +142,36 @@ def aligment(imgpool):
 	imgpool = images[:,:,::-1]
 	return imgpool
 
+def drawRC(x):
+	import matplotlib.pyplot as plt
+	plt.plot(np.arange(256), x[0][:256], 'r.', np.arange(256), x[1][:256], 'g.', np.arange(256), x[2][:256], 'b.')
+	plt.title('Response Curve')
+	plt.xlabel('g(.)')
+	plt.ylabel('log exposure ( ln(E * delta-t ) ')
+	plt.savefig('RC_' + str(IMGNO) + '.png')
+	return
+
+def exposureTimeInfo(no):
+	if no == 0: # sample image
+		return  np.log([32 * (0.5**x) for x in range(16)])
+	elif no == 1:	
+		return np.log(1 / np.array([1,2,4,8,15,30,60,125,250,500,1000,3200])) # image 1
+	elif no == 2:
+		return np.log(1 / np.array([1,2,4,8,25,50,100,200,400,800,1600,3200])) # image 2
+	elif no == 3:
+		return np.log(1 / np.array([1,2,4,8,15,20,40,80,125,160,200,320])) # image 3
+	else:
+		exit('error IMGNO')
+
 if __name__ == '__main__':
 
-	print(len(sys.argv))
+
 	if len(sys.argv) == 1 or sys.argv[1] != 'pre':
 		# read all the image
 		imgpool = readImg()
 
 		# aligment
-		imgpool = aligment(imgpool)
+		# imgpool = aligment(imgpool)
 
 
 		# shape [imgNum,pic size(2d) ,channel]
@@ -150,19 +181,24 @@ if __name__ == '__main__':
 
 		# generate B(log delta-t array)
 		# !!!!!!!!!!!!!!!!!!!!!!!!need to type artificially!!!!!!!!!!!!!!!!!!!!!!!!!!
-		B = np.log([32 * (0.5**x) for x in range(16)])
-
+		B = exposureTimeInfo(IMGNO)
+		
 		#  generate weighted parameter
 		w = [ z - 0 if z < 0.5*(0 + 255) else 255 - z for z in range(256)]
 
 		x = []
 		for ch in range(3):
 			# build the linear system and solve it
-			A,b = buildLinearSystem(sp,B,0.3,ch,w)
+			A,b = buildLinearSystem(sp,B,50,ch,w)
 			# solve the linear system
 			x.append(solver(A,b))
 		x = np.array(x) # shape = [ch , x_result(306) , 1]
+
 		# [g(0)...g(255) | ln(E0) ... ln(E49)]
+
+		# draw the resopnse curve
+		if DRAWROC == True:
+			drawRC(x.copy())
 
 		# we can use ln(Ei) directly, or need to implement pp.77 
 
@@ -174,9 +210,9 @@ if __name__ == '__main__':
 		print(hdr.max(),hdr.min())
 	
 		# save hdr data
-		np.save('hdr_raw.npy',hdr)
+		np.save('hdr_raw_'+ str(IMGNO) + '.npy',hdr)
 	else:
-		hdr = np.load('hdr_raw.npy')
+		hdr = np.load('hdr_raw_'+ str(IMGNO)  + '.npy')
 	# tone mapping
 	ldr = ToneMapping(hdr)
-	cv2.imwrite("ldr.jpg", ldr[:,:,::-1])
+	cv2.imwrite('ldr_'+ str(IMGNO) + '.jpg', ldr[:,:,::-1])
