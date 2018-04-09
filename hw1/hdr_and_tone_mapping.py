@@ -103,6 +103,10 @@ def solver(A,b):
 
 	return x
 
+def solver2(A,b):
+	x, residuals, rank, sv = np.linalg.lstsq(A, b,rcond=None)
+	return x
+
 def recon(imgpool,B,x,w):
 	from tqdm import tqdm
 
@@ -116,7 +120,8 @@ def recon(imgpool,B,x,w):
 					bot += w[imgpool[k][i][j][ch]]
 					top += w[imgpool[k][i][j][ch]] * (x[ch][imgpool[k][i][j][ch]] - B[k])
 				if bot == 0: # handle the divide by zero exp.
-					hdr[i][j][ch] = np.exp(imgpool[k//2][i][j][ch] - B[k])
+					hdr[i][j][ch] = np.exp(imgpool[k//2][i][j][ch] - B[k//2])
+																	
 				else:
 					hdr[i][j][ch] = np.exp(top / bot) #### 
 				
@@ -136,14 +141,14 @@ def localTM(Lm,alpha,op=True):
 
 		return Lm
 
-def ToneMapping(hdr, alpha=0.5, delta=1e-6, Lwhite=0 ):
+def ToneMapping(hdr, alpha=0.5, delta=1e-6, Lwhite=0.5 ):
 	# Y' = 0.299 R + 0.587 G + 0.114 B 
 	
 	Lw = hdr[:,:,0] * 0.299 + hdr[:,:,1] * 0.587 + hdr[:,:,2] * 0.114
 	LwBar = np.exp(np.mean(np.log(delta + Lw)))
 	Lm = alpha / LwBar * Lw
 	Ls = localTM(Lm,alpha,False)
-	Ld = Lm * (1 + Lm * (Lwhite ** 2) )/ (1 + Ls) 
+	Ld = Lm * (1 + Lm * (Lwhite ** 2) )/ (1 + Ls)
 
 	ldr = np.zeros(shape=hdr.shape)
 	for i in range(3):
@@ -175,7 +180,7 @@ def exposureTimeInfo(no):
 	elif no == 2:
 		return np.log(1 / np.array([1,2,4,8,25,50,100,200,400,800,1600,3200])) # image 2
 	elif no == 3:
-		return np.log(1 / np.array([1,2,4,8,15,20,40,80,125,160,200,320])) # image 3
+		return np.log(1 / np.array([1,2,4,8,15,25,40,80,125,160,200,320])) # image 3
 	else:
 		exit('error IMGNO')
 
@@ -213,6 +218,8 @@ if __name__ == '__main__':
 		# draw the resopnse curve
 		if DRAWROC == True:
 			drawRC(x.copy())
+
+		print("g(127) value = " , x[:,127,:].reshape(-1))
 
 		# reconstruct the (ir-)radiance map
 		hdr = recon(imgpool,B,x,w)
