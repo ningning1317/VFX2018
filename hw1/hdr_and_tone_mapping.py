@@ -7,6 +7,8 @@ from random import randint,choice
 import cv2
 import sys
 import re
+import scipy
+import scipy.sparse.linalg
 
 IMGNO=0
 DATADIR='aligned_' + str(IMGNO) + '/'
@@ -21,7 +23,8 @@ def sorted_nicely(l):
 def readImg():
 	tmp = []
 	for i in sorted_nicely(os.listdir(DATADIR)):
-		tmp.append(io.imread(DATADIR + i))
+		t = cv2.imread(DATADIR + i)[:,:,::-1]
+		tmp.append(t)
 	return np.array(tmp)
 
 def sample(w,h,N=50):
@@ -47,9 +50,9 @@ def sampleGAll(x):
 		
 def getSamplePoint(x):
 	# random get sample point * 50
-	# S = sample(x.shape[1],x.shape[2])
+	S = sample(x.shape[1],x.shape[2])
 	# S = [ [i,j] for i in range(20,x.shape[1]-20,100) for j in range(20,x.shape[2]-20,100) ]
-	S = sampleGAll(x)
+	# S = sampleGAll(x)
 	sp = []
 	for img in x:
 		tmp = []
@@ -106,6 +109,8 @@ def solver(A,b):
 def solver2(A,b):
 	x, residuals, rank, sv = np.linalg.lstsq(A, b,rcond=None)
 	return x
+def solver3(A,b):
+	return scipy.sparse.linalg.lsqr(A,b)[0].reshape(-1,1)
 
 def recon(imgpool,B,x,w):
 	from tqdm import tqdm
@@ -120,7 +125,7 @@ def recon(imgpool,B,x,w):
 					bot += w[imgpool[k][i][j][ch]]
 					top += w[imgpool[k][i][j][ch]] * (x[ch][imgpool[k][i][j][ch]] - B[k])
 				if bot == 0: # handle the divide by zero exp.
-					hdr[i][j][ch] = np.exp(imgpool[k//2][i][j][ch] - B[k//2])
+					hdr[i][j][ch] = np.exp(x[ch][imgpool[k//2][i][j][ch]] - B[k//2])
 																	
 				else:
 					hdr[i][j][ch] = np.exp(top / bot) #### 
@@ -131,7 +136,6 @@ def localTM(Lm,alpha,op=True):
 	if op == False:
 		return Lm
 	else:
-
 		Ls = np.zeros(shape=Lm.shape)
 		from scipy.ndimage.filters import gaussian_filter
 		blurred = []
@@ -141,14 +145,18 @@ def localTM(Lm,alpha,op=True):
 
 		return Lm
 
-def ToneMapping(hdr, alpha=0.5, delta=1e-6, Lwhite=0.5 ):
+def ToneMapping(hdr, alpha=0.5, delta=1e-6, Lwhite=0 ):
 	# Y' = 0.299 R + 0.587 G + 0.114 B 
 	
-	Lw = hdr[:,:,0] * 0.299 + hdr[:,:,1] * 0.587 + hdr[:,:,2] * 0.114
+	# Lw = hdr[:,:,0] * 0.299 + hdr[:,:,1] * 0.587 + hdr[:,:,2] * 0.114
+	# Lw = hdr[:,:,0] * 0.2126 + hdr[:,:,1] * 0.7152 + hdr[:,:,2] * 0.0722
+	Lw = hdr[:,:,0] * 0.2627 + hdr[:,:,1] * 0.6780 + hdr[:,:,2] * 0.0593
+
 	LwBar = np.exp(np.mean(np.log(delta + Lw)))
 	Lm = alpha / LwBar * Lw
 	Ls = localTM(Lm,alpha,False)
 	Ld = Lm * (1 + Lm * (Lwhite ** 2) )/ (1 + Ls)
+
 
 	ldr = np.zeros(shape=hdr.shape)
 	for i in range(3):
@@ -210,7 +218,7 @@ if __name__ == '__main__':
 			# build the linear system and solve it
 			A,b = buildLinearSystem(sp,B,50,ch,w)
 			# solve the linear system
-			x.append(solver(A,b))
+			x.append(solver3(A,b))
 		x = np.array(x) # shape = [ch , x_result(306) , 1]
 
 		# [g(0)...g(255) | ln(E0) ... ln(E49)]
