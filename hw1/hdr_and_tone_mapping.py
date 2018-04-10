@@ -74,6 +74,19 @@ def getSamplePoint(x, margin=0):
 
     return np.array(sp).transpose((1,0,2)) # shape = [ sample point, pic number,ch ]
 
+def getSampleGray(x, margin=0):
+    S = sample(x.shape[1], x.shape[2], margin)
+    sp = []
+    for img in x:
+        tmp = []
+        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY) # sample on gray
+        for py, px in S:
+            tmp.append(gray[py][px])
+        sp.append(tmp) # shape = [pic number , sample point]
+    sp = np.asarray(sp)
+    sp = sp[:,:,np.newaxis]
+    return sp.transpose((1,0,2))
+
 def buildLinearSystem(sp,B,lam,ch,w):
     A = np.zeros(shape=(sp.shape[0] * sp.shape[1] + 1 + 254, 256 + sp.shape[0] ) )
     b = np.zeros(shape=(sp.shape[0] * sp.shape[1] + 1 + 254,1))
@@ -89,7 +102,7 @@ def buildLinearSystem(sp,B,lam,ch,w):
             it += 1
 
     # g(127) = 0
-    A[it][127] = 1
+    A[it][127] = 10
     b[it][0] = 0
     it += 1
 
@@ -106,19 +119,12 @@ def buildLinearSystem(sp,B,lam,ch,w):
     return A,b
 
 def solver(A,b):
-
     U, s, V = np.linalg.svd(A, full_matrices=False)
 
     s_plus = np.diag(1/s)
     s_plus.resize(V.T.shape[1],U.T.shape[0])
     x = np.dot(np.dot(np.dot(V.T, s_plus), U.T), b)
     return x
-
-def solver2(A,b):
-	x, residuals, rank, sv = np.linalg.lstsq(A, b,rcond=None)
-	return x
-def solver3(A,b):
-	return scipy.sparse.linalg.lsqr(A,b)[0].reshape(-1,1)
 
 def recon(imgpool,B,x,w):
     from tqdm import tqdm
@@ -133,7 +139,7 @@ def recon(imgpool,B,x,w):
                     bot += w[imgpool[k][i][j][ch]]
                     top += w[imgpool[k][i][j][ch]] * (x[ch][imgpool[k][i][j][ch]] - B[k])
                 if bot == 0: # handle the divide by zero exp.
-                    hdr[i][j][ch] = hdr[i][j][ch] = np.exp(x[ch][imgpool[k//2][i][j][ch]] - B[k//2])
+                    hdr[i][j][ch] = np.exp(x[ch][imgpool[k//2][i][j][ch]] - B[k//2])
                 else:
                     hdr[i][j][ch] = np.exp(top / bot)
 
@@ -190,9 +196,7 @@ def doneByOpenCV():
     hdrDebevec = mergeDebevec.process(images, shutters, responseDebevec)
     print('HDR max:%.2f, min:%.2f'%(hdrDebevec.max(), hdrDebevec.min()))
     cv2.imwrite('%s/hdr_%d_OpenCV.hdr'%(RESULT_DIR,IMG_NUM), hdrDebevec)
-    hdrDebevec = cv2.imread('%s/hdr_%d_OpenCV.hdr'%(RESULT_DIR,IMG_NUM), -1)
-    print('HDR max:%.2f, min:%.2f'%(hdrDebevec.max(), hdrDebevec.min()))
-    tonemapDrago = cv2.createTonemapDrago(2, 0.85) # hand set params
+    tonemapDrago = cv2.createTonemapDrago(1, 0.8) # hand set params
     ldrDrago = tonemapDrago.process(hdrDebevec)
     ldrDrago = 255 * ldrDrago * 1.5 # hand set params
     print('LDR max:%.2f, min:%.2f'%(ldrDrago.max(), ldrDrago.min()))
@@ -228,7 +232,7 @@ def main(args):
     x = []
     for ch in range(3):
         # build the linear system and solve it
-        A,b = buildLinearSystem(sp,B,50,ch,w)
+        A,b = buildLinearSystem(sp,B,100,ch,w)
         # solve the linear system
         x.append(solver(A,b))
     x = np.array(x) # shape = [ch , x_result(306) , 1]
