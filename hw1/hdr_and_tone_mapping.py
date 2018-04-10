@@ -36,38 +36,40 @@ def readImg(images):
         tmp.append(cv2.imread('%s/%s'%(DATA_DIR, f)))
     return np.array(tmp)
 
-def sample(w, h, margin, N=50):
+def sample(h, w, margin, N=50):
     s = []
+    random.seed(1234)
     for i in range(N):
-        s.append([randint(margin, w-1-margin), randint(margin, h-1-margin)])
+        s.append([randint(margin, h-1-margin), randint(margin, w-1-margin)])
     return np.array(s)
 
-def sampleGAll(x):
+def sampleGAll(x, margin):
 
     # shape [imgNum,pic size(2d) ,channel]
     # choose the middle pic and sample all g(.)
-
-    midPic = x[ x.shape[0] // 2]
+    random.seed(1234)
+    midPic = x[ x.shape[0] // 2][margin:-margin, margin:-margin]
     candidate = []
     for i in range(256):
         tmp = list(zip(*np.where( midPic == i)))
         if tmp == []:
             continue
         else:
-            candidate.append( choice(tmp)[:2] )
+            py, px = choice(tmp)[:2]
+            candidate.append( (py+margin, px+margin) )
     return candidate
 
 def getSamplePoint(x, margin=0):
     random.seed(1234)
     # random get sample point * 50
     S = sample(x.shape[1], x.shape[2], margin)
-#     S = [ [i,j] for i in range(20,x.shape[1]-20,100) for j in range(20,x.shape[2]-20,100) ]
+#     S = [ [i,j] for i in range(margin,x.shape[1]-margin,100) for j in range(margin,x.shape[2]-margin,100) ]
 #     S = sampleGAll(x)
     sp = []
     for img in x:
         tmp = []
-        for px,py in S:
-            tmp.append(img[px][py])
+        for py,px in S:
+            tmp.append(img[py][px])
         sp.append(tmp) # shape = [pic number , sample point,ch ]
 
     return np.array(sp).transpose((1,0,2)) # shape = [ sample point, pic number,ch ]
@@ -150,7 +152,10 @@ def ToneMapping(hdr, alpha=0.5, delta=1e-6, Lwhite=0.5 ):
     LwBar = np.exp(np.mean(np.log(delta + Lw)))
     Lm = alpha / LwBar * Lw
     Ls = localTM(Lm,alpha,False)
-    Ld = Lm * (1 + Lm * (Lwhite ** 2) )/ (1 + Ls)
+    Lwhite *= Lm.max()
+    Ld = Lm * (1 + Lm / (Lwhite ** 2) )/ (1 + Ls)
+
+    # to handle denominator=0, since Ld=0 when Lw=0, we can set Lw=whatever
     Lw[Lw == 0] = 1
     ldr = np.zeros(shape=hdr.shape)
     for i in range(3):
