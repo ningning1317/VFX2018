@@ -1,4 +1,6 @@
 # issue: need to figure out the difference of np.gradient and cv2.Sobel !!!
+# issue: different feature in imgA will map to the same point in imgB !!!
+# issue: the descriptor using MSOP might have some bug
 import cv2
 import argparse
 import numpy as np
@@ -7,12 +9,13 @@ from tqdm import tqdm
 import sys
 from scipy.ndimage.filters import gaussian_filter
 from operator import itemgetter
+from scipy.spatial import cKDTree
 
 parser = argparse.ArgumentParser(description='Multi-Scale Oriented Patches')
 parser.add_argument('-d', '--data_dir', type=str,default='data/')
 parser.add_argument('--sigma',default=5)
 parser.add_argument('--response_w',default=0.04)
-parser.add_argument('--feature_num',default=2000)
+parser.add_argument('--feature_num',default=50)
 parser.add_argument('--radius',default=3)
 parser.add_argument('--debug',default='F')
 
@@ -103,8 +106,8 @@ def simpleDes(img,single):
     return desList
 
 
-# the descriptor vector is like MSOP
-def DesGen(img,single):
+# the descriptor vector is like MSOP # NO use!!!!
+def MSOPDes(img,single):
     img = cv2.cvtColor(img.copy(), cv2.COLOR_BGR2GRAY)
     w = img.shape[0]
     h = img.shape[1]
@@ -123,8 +126,8 @@ def DesGen(img,single):
 
 
     mag = (Ix**2 + Iy **2)**0.5
-    cosA = Ix / mag
-    sinA = Iy /mag
+    cosA = Ix / (mag +1e-6)
+    sinA = Iy / (mag +1e-6)
     theta = np.arctan2(sinA,cosA)
 
     desList = []
@@ -145,12 +148,36 @@ def DesGen(img,single):
     return desList
 
 def previewFeature(img,fList,idx):
-    
     for x,y in fList:
         img[x,y] = np.array([0,0,255])
-
     cv2.imwrite( str(idx) + '_feature_myown.png',img)
     return
+
+def featureMatching(desList1,desList2):
+    assert(len(desList1) == len(desList2))
+    point_number = len(desList1)
+    data = []
+
+    #    - feature_X          : int
+    #    - feature_Y          : int
+    #    - feature_descriptor : np.array of size (64,)
+    
+    for idx in range(point_number):
+        data.append(desList1[idx][-1])
+    for idx in range(point_number):    
+        data.append(desList2[idx][-1])
+
+    tree = cKDTree(data.copy())
+    pair = []
+    for idx in range(point_number):
+        dd,ii = tree.query(data[idx],k=10)
+        # find the first 2Group point
+        for i in ii:
+            if i >= point_number:
+                pair.append([idx,i-point_number])
+                break
+    pair = np.array(pair)
+    return pair
 
 def openCVHarris(img,idx):
     gray = cv2.cvtColor(img.copy(), cv2.COLOR_BGR2GRAY)
@@ -166,15 +193,31 @@ def openCVHarris(img,idx):
     cv2.imwrite( str(idx) + '_feature_opencv.png',img)
     return
 
-if __name__ == '__main__':
+def pairIdx2Coor(pairIdxList,desList):
+    pairCorrList = []
+    for idx,p in enumerate(pairIdxList):
+        l = []
+        for idx1,idx2 in p:
+            imgA_x = desList[idx][idx1][0]
+            imgA_y = desList[idx][idx1][1]
+            imgB_x = desList[idx+1][idx2][0]
+            imgB_y = desList[idx+1][idx2][1]
+            l.append([imgA_x,imgA_y,imgB_x,imgB_y])
+        pairCorrList.append(l)
+    return np.array(pairCorrList)
+
+def produceFeature(imginput,existImg=True,featureDesMethod='simple'):
     
-    # read the image and convert to gray scale
-    x = preImg()
+    # read the image
+    if existImg == False:
+        x = preImg()
+    else:
+        assert(imginput != None)
+        x = imginput
 
     if args.debug == 'T':
         for i in range(len(x)):
             openCVHarris(x[i].copy(),i)
-
 
     featureList = []
     # do Harris corner detect and return TopX response
@@ -184,6 +227,7 @@ if __name__ == '__main__':
         fList = nonMaximalSuppression(fList,img.shape[0],img.shape[1],args.radius)
         print('Get Top %d features on Image %d' %(fList.shape[0],idx))
         featureList.append(fList)
+        print('*****************************************************')
     
     featureList = np.array(featureList,dtype=np.int32)
     # featureList format
@@ -193,14 +237,15 @@ if __name__ == '__main__':
         for i in range(len(x)):
             previewFeature(x[i],featureList[i],i)
 
+    desList = []
+    if featureDesMethod == 'simple':
+        for idx,img in enumerate(x):
+            desList.append(simpleDes(img,featureList[idx]))
+    elif featureDesMethod == 'MSOP':
+        for idx,img in enumerate(x):    
+            desList.append(MSOPDes(img,featureList[idx]))
 
-    desListMSOP = []
-    desListSimple = []
-    for idx,img in enumerate(x):
-        desListMSOP.append(DesGen(img,featureList[idx]))
-        desListSimple.append(simpleDes(img,featureList[idx]))
-
-    # desListMSOP:  shape = (image_num,feature_num, )
+    # desList_MSOP:  shape = (image_num,feature_num, )
     #                              ~~~~~~~~~~~~
     #                              the feature_num may smaller than args.features_num
     #
@@ -211,7 +256,7 @@ if __name__ == '__main__':
     #    - feature_Theta      : float
     #    - feature_descriptor : np.array of size (64,)
         
-    # desListSimple:  shape = (image_num,feature_num, )
+    # desList_Simple:  shape = (image_num,feature_num, )
     #                              ~~~~~~~~~~~~
     #                              the feature_num may smaller than args.features_num
     #
@@ -221,8 +266,22 @@ if __name__ == '__main__':
     #    - feature_Y          : int
     #    - feature_descriptor : np.array of size (64,)
 
-    print(desListMSOP[0][0]) # print the img0 #0 feature description
-    print(desListSimple[0][0])
+    pairIdxList = []
+    for idx in range(len(x)-1):
+        pairIdxList.append(featureMatching(desList[idx],desList[idx+1]))
+    pairIdxList = np.array(pairIdxList)
+
+    pairCorrList = pairIdx2Coor(pairIdxList,desList)
+
+    #  pairCorrList shape = ( pairNum(N images has N-1), pairpoint , 4 )
+
+    #  pairCorrList[0] get the paired points in img0 and img1
+    #  pairCorrList[0][1] get the first paired points in img0 and img1
+    #  and the format is [img0_x, img0_y, img1_x, img1_y]
+
+    return pairCorrList
 
 
-
+if __name__ == '__main__':
+    pairCorrList = produceFeature(None,False,'simple')
+    print(pairCorrList)
