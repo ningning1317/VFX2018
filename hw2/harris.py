@@ -10,21 +10,23 @@ import sys
 from scipy.ndimage.filters import gaussian_filter
 from operator import itemgetter
 from scipy.spatial import cKDTree
+import re
+import glob
 
 parser = argparse.ArgumentParser(description='Multi-Scale Oriented Patches')
-parser.add_argument('-d', '--data_dir', type=str,default='data/')
+parser.add_argument('-d', '--data_dir', type=str,default='test data/parrington/warp/')
 parser.add_argument('--sigma',default=5)
 parser.add_argument('--response_w',default=0.04)
-parser.add_argument('--feature_num',default=50)
-parser.add_argument('--radius',default=3)
+parser.add_argument('--feature_num',default=5000)
+parser.add_argument('--radius',default=1)
 parser.add_argument('--debug',default='F')
 
 args = parser.parse_args()
 
 def preImg():
     lst = []
-    for name in os.listdir(args.data_dir):
-        image = cv2.imread(args.data_dir + name)    
+    for path in sorted(glob.glob(args.data_dir + '*.jpg')):
+        image = cv2.imread(path)
         lst.append(image)
     return np.array(lst)
 
@@ -44,8 +46,8 @@ def Harris(img):
     Iyy = Iy**2
     Ixy = np.multiply(Ix,Iy)
 
-    w = img.shape[0]
-    h = img.shape[1]
+    w = img.shape[1]
+    h = img.shape[0]
 
     featureList = []
     responseList = []
@@ -65,18 +67,17 @@ def Harris(img):
     # set the threshold to the 0.0001*max_r
     threshold = response.max()*0.0001
 
-
-    for i in tqdm(range(1,w-1)): # mutually remove the bondary case (for simple implement of descriptor)
-        for j in range(1,h-1): # mutually remove the bondary case (for simple implement of descriptor)
+    for i in tqdm(range(4,h-5)): # mutually remove the bondary case (for simple implement of descriptor)
+        for j in range(4,w-5): # mutually remove the bondary case (for simple implement of descriptor)
             
             if response[i,j] > threshold:
-                featureList.append([i,j,response[i,j]])
+                featureList.append([j,i,response[i,j]])
     
     return featureList
 
-def nonMaximalSuppression(fList,w,h,radius):
+def nonMaximalSuppression(fList,h,w,radius):
     f = sorted(fList, key=itemgetter(2),reverse=True)
-    space = np.zeros(shape=(w,h))
+    space = np.zeros(shape=(h,w))
     newList = []
 
     for x,y,response in tqdm(f):
@@ -86,10 +87,9 @@ def nonMaximalSuppression(fList,w,h,radius):
         y_min = max(y-radius,0)
         y_max = min(y+radius,h)
 
-        if np.sum(space[x_min:x_max,y_min:y_max]) == 0:
-            space[x,y] = 1
+        if np.sum(space[y_min:y_max,x_min:x_max]) == 0:
+            space[y,x] = 1
             newList.append([x,y])
-
         if len(newList) >= args.feature_num:
             break
     return np.array(newList)
@@ -97,29 +97,25 @@ def nonMaximalSuppression(fList,w,h,radius):
 
 def simpleDes(img,single):
     img = cv2.cvtColor(img.copy(), cv2.COLOR_BGR2GRAY)
-    w = img.shape[0]
-    h = img.shape[1]
-
+    w = img.shape[1]
+    h = img.shape[0]
     desList = []
     for x,y in single:
-        desList.append( [ x,y,img[x-1:x+2,y-1:y+2].reshape(-1)] )
+        # print(img[x-4:x+5,y-4:y+5].size)
+        if img[x-4:x+5,y-4:y+5].size == 81: # I don't know why there are some crop it empty
+            desList.append( [ x,y,img[x-4:x+5,y-4:y+5].reshape(-1)] )
     return desList
 
 
 # the descriptor vector is like MSOP # NO use!!!!
 def MSOPDes(img,single):
     img = cv2.cvtColor(img.copy(), cv2.COLOR_BGR2GRAY)
-    w = img.shape[0]
-    h = img.shape[1]
+    w = img.shape[1]
+    h = img.shape[0]
 
     # https://docs.opencv.org/2.4/modules/imgproc/doc/geometric_transformations.html#void%20warpAffine(InputArray%20src,%20OutputArray%20dst,%20InputArray%20M,%20Size%20dsize,%20int%20flags,%20int%20borderMode,%20const%20Scalar&%20borderValue)
     
     # cal orientation
-
-    # np.gradient or cv2.Sobel to use ? !!!!!!!!!!!!!!!!!!
-    # Ix,Iy = np.gradient(img)
-    # Ix = gaussian_filter(Ix, 4.5)
-    # Iy = gaussian_filter(Iy, 4.5)
 
     Ix = cv2.Sobel(img,cv2.CV_32F,1,0)
     Iy = cv2.Sobel(img,cv2.CV_32F,0,1)
@@ -131,9 +127,10 @@ def MSOPDes(img,single):
     theta = np.arctan2(sinA,cosA)
 
     desList = []
-    for x,y in single:
-        M = cv2.getRotationMatrix2D((x,y),-theta[x,y],1)
-        dst = cv2.warpAffine(img,M,(w,h))
+    for x,y in tqdm(single):
+
+        M = cv2.getRotationMatrix2D((y,x),-theta[y,x],1)
+        dst = cv2.warpAffine(img,M,(h,w))
         
         # crop the dst (handle the boundary)
         x_min =  x-20 if x-20>0 else 0
@@ -144,37 +141,37 @@ def MSOPDes(img,single):
         if dst[x_min:x_max,y_min:y_max].shape[0] > 0 and dst[x_min:x_max,y_min:y_max].shape[1] > 0:
             descriptor = cv2.resize(dst[x_min:x_max+1,y_min:y_max+1],(8,8),interpolation=cv2.INTER_CUBIC).reshape(-1)
 
-            desList.append([x,y,theta[x,y],descriptor])
+            desList.append([x,y,theta[y,x],descriptor])
     return desList
 
 def previewFeature(img,fList,idx):
     for x,y in fList:
-        img[x,y] = np.array([0,0,255])
+        img[y,x] = np.array([0,0,255])
     cv2.imwrite( str(idx) + '_feature_myown.png',img)
     return
 
 def featureMatching(desList1,desList2):
-    assert(len(desList1) == len(desList2))
-    point_number = len(desList1)
+    point_number1 = len(desList1)
     data = []
 
     #    - feature_X          : int
     #    - feature_Y          : int
     #    - feature_descriptor : np.array of size (64,)
-    
-    for idx in range(point_number):
+
+    for idx in range(len(desList1)):
         data.append(desList1[idx][-1])
-    for idx in range(point_number):    
+
+    for idx in range(len(desList2)):    
         data.append(desList2[idx][-1])
 
     tree = cKDTree(data.copy())
     pair = []
-    for idx in range(point_number):
-        dd,ii = tree.query(data[idx],k=10)
+    for idx in (range(len(desList1))):
+        dd,ii = tree.query(data[idx],k=5)
         # find the first 2Group point
         for i in ii:
-            if i >= point_number:
-                pair.append([idx,i-point_number])
+            if i >= len(desList1):
+                pair.append([idx,i-len(desList1)])
                 break
     pair = np.array(pair)
     return pair
@@ -203,7 +200,7 @@ def pairIdx2Coor(pairIdxList,desList):
             imgB_x = desList[idx+1][idx2][0]
             imgB_y = desList[idx+1][idx2][1]
             l.append([imgA_x,imgA_y,imgB_x,imgB_y])
-        pairCorrList.append(l)
+        pairCorrList.append(np.array(l))
     return np.array(pairCorrList)
 
 def produceFeature(imginput,existImg=True,featureDesMethod='simple'):
@@ -228,10 +225,10 @@ def produceFeature(imginput,existImg=True,featureDesMethod='simple'):
         print('Get Top %d features on Image %d' %(fList.shape[0],idx))
         featureList.append(fList)
         print('*****************************************************')
-    
-    featureList = np.array(featureList,dtype=np.int32)
+
+    featureList = np.array(featureList)
     # featureList format
-    # type 3D numpy array with dimension (image_num,args.feature_num, 2)
+    # type 3D numpy array with dimension (image_num, <=args.feature_num, 2)
 
     if args.debug == 'T':
         for i in range(len(x)):
@@ -265,9 +262,8 @@ def produceFeature(imginput,existImg=True,featureDesMethod='simple'):
     #    - feature_X          : int
     #    - feature_Y          : int
     #    - feature_descriptor : np.array of size (64,)
-
     pairIdxList = []
-    for idx in range(len(x)-1):
+    for idx in tqdm(range(len(x)-1)):
         pairIdxList.append(featureMatching(desList[idx],desList[idx+1]))
     pairIdxList = np.array(pairIdxList)
 
@@ -283,5 +279,14 @@ def produceFeature(imginput,existImg=True,featureDesMethod='simple'):
 
 
 if __name__ == '__main__':
+    x = preImg()
     pairCorrList = produceFeature(None,False,'simple')
-    print(pairCorrList)
+
+    for i in range(pairCorrList.shape[0]):
+        feature_pairs = pairCorrList[i]
+        for img0_x, img0_y, img1_x, img1_y in feature_pairs:
+            cv2.circle(x[i], (img0_x, img0_y), 2, (0,0,255), -1)
+            cv2.circle(x[i+1], (img1_x, img1_y), 2, (0,0,255), -1)
+        matching = np.concatenate((x[i+1], x[i]), axis=1)
+        cv2.imwrite('matching_%d.jpg'%(i), matching)
+        print(feature_pairs.shape)
