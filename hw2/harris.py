@@ -17,7 +17,7 @@ parser = argparse.ArgumentParser(description='Multi-Scale Oriented Patches')
 parser.add_argument('-d', '--data_dir', type=str,default='test data/parrington/warp/')
 parser.add_argument('--sigma',default=5)
 parser.add_argument('--response_w',default=0.04)
-parser.add_argument('--feature_num',default=5000)
+parser.add_argument('--feature_num',default=3000)
 parser.add_argument('--radius',default=1)
 parser.add_argument('--debug',default='F')
 
@@ -102,8 +102,8 @@ def simpleDes(img,single):
     desList = []
     for x,y in single:
         # print(img[x-4:x+5,y-4:y+5].size)
-        if img[x-4:x+5,y-4:y+5].size == 81: # I don't know why there are some crop it empty
-            desList.append( [ x,y,img[x-4:x+5,y-4:y+5].reshape(-1)] )
+        if img[y-4:y+5,x-4:x+5].size == 81: # I don't know why there are some crop it empty
+            desList.append( [ x,y,img[y-4:y+5,x-4:x+5].reshape(-1)] )
     return desList
 
 
@@ -138,8 +138,8 @@ def MSOPDes(img,single):
         y_min =  y-20 if y-20>0 else 0
         y_max =  y+20 if y+20<h else h-1
 
-        if dst[x_min:x_max,y_min:y_max].shape[0] > 0 and dst[x_min:x_max,y_min:y_max].shape[1] > 0:
-            descriptor = cv2.resize(dst[x_min:x_max+1,y_min:y_max+1],(8,8),interpolation=cv2.INTER_CUBIC).reshape(-1)
+        if dst[y_min:y_max,x_min:x_max].shape[0] > 0 and dst[y_min:y_max,x_min:x_max].shape[1] > 0:
+            descriptor = cv2.resize(dst[y_min:y_max+1,x_min:x_max+1],(8,8),interpolation=cv2.INTER_CUBIC).reshape(-1)
 
             desList.append([x,y,theta[y,x],descriptor])
     return desList
@@ -169,9 +169,9 @@ def featureMatching(desList1,desList2):
     for idx in (range(len(desList1))):
         dd,ii = tree.query(data[idx],k=5)
         # find the first 2Group point
-        for i in ii:
+        for t,i in enumerate(ii):
             if i >= len(desList1):
-                pair.append([idx,i-len(desList1)])
+                pair.append([idx,i-len(desList1),dd[t]])
                 break
     pair = np.array(pair)
     return pair
@@ -194,7 +194,10 @@ def pairIdx2Coor(pairIdxList,desList):
     pairCorrList = []
     for idx,p in enumerate(pairIdxList):
         l = []
-        for idx1,idx2 in p:
+        p = sorted(p, key=itemgetter(2)) # sorted by distance
+        for idx1,idx2,d in p:
+            idx1 = int(idx1)
+            idx2 = int(idx2)
             imgA_x = desList[idx][idx1][0]
             imgA_y = desList[idx][idx1][1]
             imgB_x = desList[idx+1][idx2][0]
@@ -280,13 +283,15 @@ def produceFeature(imginput,existImg=True,featureDesMethod='simple'):
 
 if __name__ == '__main__':
     x = preImg()
-    pairCorrList = produceFeature(None,False,'simple')
+    pairCorrList = produceFeature(None,False,'MSOP')
 
     for i in range(pairCorrList.shape[0]):
         feature_pairs = pairCorrList[i]
-        for img0_x, img0_y, img1_x, img1_y in feature_pairs:
-            cv2.circle(x[i], (img0_x, img0_y), 2, (0,0,255), -1)
-            cv2.circle(x[i+1], (img1_x, img1_y), 2, (0,0,255), -1)
-        matching = np.concatenate((x[i+1], x[i]), axis=1)
+        img0 = x[i].copy()
+        img1 = x[i+1].copy()
+        for img0_x, img0_y, img1_x, img1_y in feature_pairs[:50]:
+            cv2.circle(img0, (img0_x, img0_y), 2, (0,0,255), -1)
+            cv2.circle(img1, (img1_x, img1_y), 2, (0,0,255), -1)
+        matching = np.concatenate((img1, img0), axis=1)
         cv2.imwrite('matching_%d.jpg'%(i), matching)
-        print(feature_pairs.shape)
+        # print(feature_pairs.shape)
