@@ -67,8 +67,10 @@ def Harris(img):
     # set the threshold to the 0.0001*max_r
     threshold = response.max()*0.0001
 
-    for i in tqdm(range(4,h-5)): # mutually remove the bondary case (for simple implement of descriptor)
-        for j in range(4,w-5): # mutually remove the bondary case (for simple implement of descriptor)
+    margin_x, margin_y = int(w*0.03), int(h*0.03) # set the margin (prevent detect warpped img edge)
+
+    for i in tqdm(range(margin_y,h-margin_y)): # mutually remove the bondary case (for simple implement of descriptor)
+        for j in range(margin_x,w-margin_x): # mutually remove the bondary case (for simple implement of descriptor)
             
             if response[i,j] > threshold:
                 featureList.append([j,i,response[i,j]])
@@ -264,7 +266,7 @@ def produceFeature(imginput,existImg=True,featureDesMethod='simple'):
     #
     #    - feature_X          : int
     #    - feature_Y          : int
-    #    - feature_descriptor : np.array of size (64,)
+    #    - feature_descriptor : np.array of size (81,)
     pairIdxList = []
     for idx in tqdm(range(len(x)-1)):
         pairIdxList.append(featureMatching(desList[idx],desList[idx+1]))
