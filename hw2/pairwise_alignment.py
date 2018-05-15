@@ -19,6 +19,7 @@ def ransac(feature_pairs):
     img1_features = feature_pairs[:,2:]
     best_transform = None # [dx, dy]
     max_c = 0 # c: number of inliers
+    K = 50 if feature_pairs.shape[0] >= 50 else feature_pairs.shape[0]
     for k in range(50):
         dx, dy = img0_features[k] - img1_features[k]
         distance = img0_features - (img1_features + [dx, dy])
