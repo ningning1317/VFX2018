@@ -221,7 +221,8 @@ def findCorrSeq(desList,mapping_threshold=100):
         # justify the left/right image
         # (0,1) => +
         
-        # print(lst) 
+        if len(lst) == 0:
+            exit('picture %d cannot match any picture'%(i))
         if len(lst) == 1:
             idx1 = lst[0][0]
             dx_idx1 = lst[0][1]
@@ -231,6 +232,7 @@ def findCorrSeq(desList,mapping_threshold=100):
                 orderPair.append([idx1,i])
         else:
             lst = sorted(lst, key=itemgetter(2),reverse=True)
+            print(lst)
             idx1, idx2 = lst[0][0],lst[1][0]
             dx_idx1, dx_idx2 = lst[0][1],lst[1][1]
 
