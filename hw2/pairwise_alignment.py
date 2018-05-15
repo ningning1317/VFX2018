@@ -34,8 +34,6 @@ def main(args):
     feature_matching = np.load('%s/feature_matching.npy'%args.data_dir)
     pairwise_alignment = []
     for i in range(feature_matching.shape[0]):
-        img0 = cv2.imread('%s/%d.jpg'%(args.data_dir, i))
-        img1 = cv2.imread('%s/%d.jpg'%(args.data_dir, i+1))
         best_transform, max_c = ransac(feature_matching[i])
         pairwise_alignment.append(best_transform)
     pairwise_alignment = np.array(pairwise_alignment)

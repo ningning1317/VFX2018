@@ -25,8 +25,8 @@ def preImg():
     lst = []
     i = 0
     while True:
-        if os.path.exists('%s/%d.jpg'%(args.data_dir, i)):
-            image = cv2.imread('%s/%d.jpg'%(args.data_dir, i), -1)
+        if os.path.exists('%s/%d.png'%(args.data_dir, i)):
+            image = cv2.imread('%s/%d.png'%(args.data_dir, i), -1)
             lst.append(image)
             i+=1
         else:
