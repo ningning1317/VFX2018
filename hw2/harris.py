@@ -15,7 +15,7 @@ import glob
 from random import shuffle
 
 parser = argparse.ArgumentParser(description='Multi-Scale Oriented Patches')
-parser.add_argument('-d', '--data_dir', type=str,default='test data/parrington/small_test/')
+parser.add_argument('-d', '--data_dir', type=str,default='test data/1/test/')
 parser.add_argument('--sigma',default=5)
 parser.add_argument('--response_w',default=0.04)
 parser.add_argument('--feature_num',default=3000)
@@ -299,7 +299,7 @@ def pairIdx2CoorSingle(pairIdx,desList,a,b):
         l.append([imgA_x,imgA_y,imgB_x,imgB_y])
     return np.array(l)
 
-def pairIdx2Coor(pairIdxList,desList):
+def pairIdx2Coor(pairIdxList,desList,seq):
     pairCorrList = []
     for idx,p in enumerate(pairIdxList):
         l = []
@@ -312,7 +312,7 @@ def pairIdx2Coor(pairIdxList,desList):
         #     imgB_x = desList[idx+1][idx2][0]
         #     imgB_y = desList[idx+1][idx2][1]
         #     l.append([imgA_x,imgA_y,imgB_x,imgB_y])
-        l = pairIdx2CoorSingle(p,desList,idx,idx+1)
+        l = pairIdx2CoorSingle(p,desList,seq[idx],seq[idx+1])
         pairCorrList.append(np.array(l))
 
     return np.array(pairCorrList)
@@ -392,7 +392,7 @@ def produceFeature(imginput,existImg=True,featureDesMethod='simple'):
             pairIdxList.append(featureMatching(desList[seq[idx]],desList[seq[idx+1]]))
         pairIdxList = np.array(pairIdxList)
 
-    pairCorrList = pairIdx2Coor(pairIdxList,desList)
+    pairCorrList = pairIdx2Coor(pairIdxList,desList,seq)
 
     #  pairCorrList shape = ( pairNum(N images has N-1), pairpoint , 4 )
 
