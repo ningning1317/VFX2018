@@ -12,7 +12,7 @@ def load_imgs(data_dir):
     imgs = {}
     for f in os.listdir('%s'%data_dir):
         if '.jpg' in f:
-            img = cv2.imread('%s/%s'%(data_dir, f))
+            img = cv2.imread('%s/%s'%(data_dir, f), -1)
             imgs[f] = img
     return imgs
 
@@ -29,7 +29,7 @@ def cylindrical_warp(img, f):
     warp_img = np.zeros(img.shape, dtype=np.uint8)
     height, width = img.shape[0], img.shape[1]
     center_x, center_y = width//2, height//2
-    
+
     for warp_y in range(img.shape[0]):
         for warp_x in range(img.shape[1]):
             x = np.tan((warp_x-center_x) / f) * f
@@ -39,7 +39,7 @@ def cylindrical_warp(img, f):
             if x < 0 or x >= width or y < 0 or y >= height:
                 continue
             warp_img[warp_y, warp_x] = img[int(y), int(x)]
-    
+
     return warp_img
 
 def main(args):
@@ -49,7 +49,7 @@ def main(args):
     focals = load_focals(args.data_dir)
     for img_name in imgs:
         warp_img = cylindrical_warp(imgs[img_name], focals[img_name])
-        cv2.imwrite('%s/warp/%s'%(args.data_dir, img_name), warp_img)
+        cv2.imwrite('%s/warp/%s.png'%(args.data_dir, img_name.split('.')[0]), warp_img)
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
