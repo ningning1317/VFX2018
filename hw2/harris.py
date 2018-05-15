@@ -3,16 +3,13 @@
 # issue: the descriptor using MSOP might have some bug
 import cv2
 import argparse
-import numpy as np
 import os
-from tqdm import tqdm
-import sys
-from scipy.ndimage.filters import gaussian_filter
 from operator import itemgetter
-from scipy.spatial import cKDTree
-import re
-import glob
 from random import shuffle
+import numpy as np
+from tqdm import tqdm
+from scipy.ndimage.filters import gaussian_filter
+from scipy.spatial import cKDTree
 
 parser = argparse.ArgumentParser(description='Multi-Scale Oriented Patches')
 parser.add_argument('-d', '--data_dir', type=str,default='test data/1/test/')
@@ -40,7 +37,7 @@ def Harris(img):
 
     img = cv2.cvtColor(img.copy(), cv2.COLOR_BGR2GRAY)
     Ix__,Iy__ = np.gradient(img)
-    
+
     Ix = cv2.Sobel(img,cv2.CV_32F,1,0)
     Iy = cv2.Sobel(img,cv2.CV_32F,0,1)
 
@@ -77,10 +74,10 @@ def Harris(img):
 
     for i in tqdm(range(margin_y,h-margin_y)): # mutually remove the bondary case (for simple implement of descriptor)
         for j in range(margin_x,w-margin_x): # mutually remove the bondary case (for simple implement of descriptor)
-            
+
             if response[i,j] > threshold:
                 featureList.append([j,i,response[i,j]])
-    
+
     return featureList
 
 def nonMaximalSuppression(fList,h,w,radius):
@@ -89,7 +86,7 @@ def nonMaximalSuppression(fList,h,w,radius):
     newList = []
 
     for x,y,response in tqdm(f):
-        
+
         x_min = max(x-radius,0)
         x_max = min(x+radius,w)
         y_min = max(y-radius,0)
@@ -122,7 +119,7 @@ def MSOPDes(img,single):
     h = img.shape[0]
 
     # https://docs.opencv.org/2.4/modules/imgproc/doc/geometric_transformations.html#void%20warpAffine(InputArray%20src,%20OutputArray%20dst,%20InputArray%20M,%20Size%20dsize,%20int%20flags,%20int%20borderMode,%20const%20Scalar&%20borderValue)
-    
+
     # cal orientation
 
     Ix = cv2.Sobel(img,cv2.CV_32F,1,0)
@@ -139,7 +136,7 @@ def MSOPDes(img,single):
 
         M = cv2.getRotationMatrix2D((y,x),-theta[y,x],1)
         dst = cv2.warpAffine(img,M,(h,w))
-        
+
         # crop the dst (handle the boundary)
         x_min =  x-20 if x-20>0 else 0
         x_max =  x+20 if x+20<w else w-1
@@ -169,7 +166,7 @@ def featureMatching(desList1,desList2):
     for idx in range(len(desList1)):
         data.append(desList1[idx][-1])
 
-    for idx in range(len(desList2)):    
+    for idx in range(len(desList2)):
         data.append(desList2[idx][-1])
 
     tree = cKDTree(data.copy())
@@ -197,14 +194,14 @@ def printPair(pairCorrList,a,b):
 
 
 def findCorrSeq(desList,mapping_threshold=100):
-    
+
 
     from pairwise_alignment import ransac
     imgPairSize = len(desList)
     orderPair = []
     for i in tqdm(range(imgPairSize)):
         lst = []
-        
+
         for j in range(imgPairSize):
             if i == j:
                 continue
@@ -220,7 +217,7 @@ def findCorrSeq(desList,mapping_threshold=100):
 
         # justify the left/right image
         # (0,1) => +
-        
+
         if len(lst) == 0:
             exit('picture %d cannot match any picture'%(i))
         if len(lst) == 1:
@@ -320,7 +317,7 @@ def pairIdx2Coor(pairIdxList,desList,seq):
     return np.array(pairCorrList)
 
 def produceFeature(imginput,existImg=True,featureDesMethod='simple'):
-    
+
     # read the image
     if existImg == False:
         x = preImg()
@@ -356,7 +353,7 @@ def produceFeature(imginput,existImg=True,featureDesMethod='simple'):
         for idx,img in enumerate(x):
             desList.append(simpleDes(img,featureList[idx]))
     elif featureDesMethod == 'MSOP':
-        for idx,img in enumerate(x):    
+        for idx,img in enumerate(x):
             desList.append(MSOPDes(img,featureList[idx]))
 
     # desList_MSOP:  shape = (image_num,feature_num, )
@@ -369,7 +366,7 @@ def produceFeature(imginput,existImg=True,featureDesMethod='simple'):
     #    - feature_Y          : int
     #    - feature_Theta      : float
     #    - feature_descriptor : np.array of size (64,)
-        
+
     # desList_Simple:  shape = (image_num,feature_num, )
     #                              ~~~~~~~~~~~~
     #                              the feature_num may smaller than args.features_num
@@ -404,10 +401,15 @@ def produceFeature(imginput,existImg=True,featureDesMethod='simple'):
 
     return pairCorrList,seq
 
+def resaveImgsInCorrOrder(imgs, seq):
+    for new_idx, old_idx in enumerate(seq):
+        cv2.imwrite('%s/%d.png'%(args.data_dir, new_idx), imgs[old_idx])
 
 if __name__ == '__main__':
     x = preImg()
     pairCorrList,seq  = produceFeature(None,False,'simple')
+    if args.random_order == 'T':
+        resaveImgsInCorrOrder(x, seq)
     # seq is left to right
     for i in range(pairCorrList.shape[0]):
         feature_pairs = pairCorrList[i]
@@ -417,6 +419,6 @@ if __name__ == '__main__':
             cv2.circle(img0, (img0_x, img0_y), 2, (0,0,255), -1)
             cv2.circle(img1, (img1_x, img1_y), 2, (0,0,255), -1)
         matching = np.concatenate((img0, img1), axis=1)
-        cv2.imwrite('matching_%d.jpg'%(i), matching)
+        cv2.imwrite('%s/matching_%d.jpg'%(args.data_dir, i), matching)
         # print(feature_pairs.shape)
-
+    np.save('%s/feature_matching.npy'%args.data_dir, pairCorrList)
