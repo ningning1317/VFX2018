@@ -12,6 +12,7 @@ import numpy as np
 class Panorama():
     def __init__(self, init_img):
         self.img = init_img.copy()
+        self.ori_h = self.img.shape[0]
         self.ori_x, self.ori_y = 0, 0
         self.last_tail = self.img.shape[1]
         self.last_top, self.last_bottom = 0, self.img.shape[0]
@@ -25,10 +26,10 @@ class Panorama():
         if self.ori_y < 0:
             self.last_top -= self.ori_y
             self.last_bottom -= self.ori_y
-            self.img = np.concatenate((np.zeros((-self.ori_y, self.img.shape[1])), self.img), axis=0)
+            self.img = np.concatenate((np.zeros((-self.ori_y, self.img.shape[1], 3)), self.img), axis=0)
             self.ori_y = 0
         else:
-            new_h = h1+self.ori_y if (h1+self.ori_y) > self.img.shape[0] else self.img.shape[0] 
+            new_h = h1+self.ori_y if (h1+self.ori_y) > self.img.shape[0] else self.img.shape[0]
             self.img = np.concatenate((self.img, np.zeros((new_h-self.img.shape[0], self.img.shape[1], 3))), axis=0)
         for y in range(h1):
             bound_y = True if self.ori_y+y > self.last_top and self.ori_y+y < self.last_bottom else False
@@ -45,43 +46,39 @@ class Panorama():
                         self.img[self.ori_y+y,self.ori_x+x] = new_img[y,x]
         self.last_tail = self.ori_x + w1
         self.last_top, self.last_bottom = self.ori_y, self.ori_y + h1
-        
-    def drift_refine(self, ori_h):
+
+    def drift_refine(self):
         # inverse warpping by y' = y + mx
-        new_img = np.zeros((ori_h, self.img.shape[1], 3), dtype=np.uint8)
-        m = (self.img.shape[0] - ori_h) / self.img.shape[1]
+        new_img = np.zeros((self.ori_h, self.img.shape[1], 3), dtype=np.uint8)
+        m = (self.img.shape[0] - self.ori_h) / self.img.shape[1]
         for warp_y in range(new_img.shape[0]):
             for warp_x in range(new_img.shape[1]):
                 y = int(warp_y + warp_x * m)
                 new_img[warp_y, warp_x] = self.img[y, warp_x]
         # to crop the black margin
-        h_margin, w_margin = int(new_img.shape[0]*0.05), int(new_img.shape[1]*0.05)
+        h_margin, w_margin = int(new_img.shape[0]*0.05), int(new_img.shape[1]*0.03)
         self.img = new_img[h_margin:-h_margin, w_margin:-w_margin]
-    
+
     def save(self, path):
         cv2.imwrite(path, self.img)
 
 def main(args):
     pairwise_alignment = np.load('%s/pairwise_alignment.npy'%args.data_dir)
-    panorama = None
-    ori_height = 0
+    panorama = Panorama(cv2.imread('%s/%d.png'%(args.data_dir, 0), -1))
+
     for i in range(pairwise_alignment.shape[0]):
-        img = cv2.imread('%s/%d.png'%(args.data_dir,i), -1)
-        if panorama is None:
-            panorama = Panorama(img)
-            ori_height = img.shape[0]
-        else:
-            dx, dy = pairwise_alignment[i-1]
-            panorama.align_and_blend(img, dx, dy)
+        img = cv2.imread('%s/%d.png'%(args.data_dir,i+1), -1)
+        dx, dy = pairwise_alignment[i]
+        panorama.align_and_blend(img, dx, dy)
     if args.refine:
-        panorama.drift_refine(ori_height)
+        panorama.drift_refine()
         panorama.save('%s/refine_panorama.png'%args.data_dir)
     else:
         panorama.save('%s/panorama.png'%args.data_dir)
-    
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('-d', '--data_dir', type=str, required=True)
     parser.add_argument('--refine', action='store_true')
-    parser.set_defaults(feature=False)
+    parser.set_defaults(refine=False)
     main(parser.parse_args())

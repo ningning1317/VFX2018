@@ -70,7 +70,7 @@ def Harris(img):
     # set the threshold to the 0.0001*max_r
     threshold = response.max()*0.0001
 
-    margin_x, margin_y = int(w*0.03), int(h*0.03) # set the margin (prevent detect warpped img edge)
+    margin_x, margin_y = int(w*0.1), int(h*0.1) # set the margin (prevent detect warpped img edge)
 
     for i in tqdm(range(margin_y,h-margin_y)): # mutually remove the bondary case (for simple implement of descriptor)
         for j in range(margin_x,w-margin_x): # mutually remove the bondary case (for simple implement of descriptor)
