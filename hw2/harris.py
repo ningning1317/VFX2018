@@ -1,6 +1,4 @@
-# issue: need to figure out the difference of np.gradient and cv2.Sobel !!!
 # issue: different feature in imgA will map to the same point in imgB !!!
-# issue: the descriptor using MSOP might have some bug
 import cv2
 import argparse
 import os
@@ -155,7 +153,7 @@ def previewFeature(img,fList,idx):
     cv2.imwrite( str(idx) + '_feature_myown.png',img)
     return
 
-def featureMatching(desList1,desList2):
+def featureMatching(desList1,desList2,method_num=1):
     point_number1 = len(desList1)
     data = []
 
@@ -163,22 +161,38 @@ def featureMatching(desList1,desList2):
     #    - feature_Y          : int
     #    - feature_descriptor : np.array of size (64,)
 
-    for idx in range(len(desList1)):
-        data.append(desList1[idx][-1])
+    # method 1
+    if method_num == 1:
+        for idx in range(len(desList1)):
+            data.append(desList1[idx][-1])
 
-    for idx in range(len(desList2)):
-        data.append(desList2[idx][-1])
+        for idx in range(len(desList2)):
+            data.append(desList2[idx][-1])
 
-    tree = cKDTree(data.copy())
-    pair = []
-    for idx in (range(len(desList1))):
-        dd,ii = tree.query(data[idx],k=5)
-        # find the first 2Group point
-        for t,i in enumerate(ii):
-            if i >= len(desList1):
-                pair.append([idx,i-len(desList1),dd[t]])
-                break
-    pair = np.array(pair)
+        tree = cKDTree(data.copy())
+        pair = []
+        for idx in (range(len(desList1))):
+            dd,ii = tree.query(data[idx],k=5)
+            # find the first 2Group point
+            for t,i in enumerate(ii):
+                if i >= len(desList1):
+                    pair.append([idx,i-len(desList1),dd[t]])
+                    break
+        pair = np.array(pair)
+
+    # revised feature matching
+    if method_num == 2:
+        for idx in range(len(desList1)):
+            data.append(desList1[idx][-1])
+        
+        tree = cKDTree(data.copy())
+        pair = []
+        
+        for idx2 in range(len(desList2)):
+            dd,ii = tree.query(desList2[idx2][-1],k=2)
+            if dd[0] / dd[1] < 0.7:
+                pair.append([ii[0],idx2,dd[0]])
+        pair = np.array(pair)
     return pair
 
 def printPair(pairCorrList,a,b):
@@ -195,7 +209,6 @@ def printPair(pairCorrList,a,b):
 
 def findCorrSeq(desList,mapping_threshold=100):
 
-
     from pairwise_alignment import ransac
     imgPairSize = len(desList)
     orderPair = []
@@ -206,12 +219,14 @@ def findCorrSeq(desList,mapping_threshold=100):
             if i == j:
                 continue
             else:
-                pairIdx = featureMatching(desList[i],desList[j])
+                pairIdx = featureMatching(desList[i],desList[j],method_num=1)
                 pairCorr = pairIdx2CoorSingle(pairIdx,desList,i,j)
                 # printPair(pairCorrList,i,j)
                 if len(pairCorr) < 50: # the valid matching pait less than 50, continue!
                     continue
                 [dx, dy], c = ransac(pairCorr)
+                # if c > 5.9 + 0.22 * len(pairCorr):
+                #     lst.append([j,dx,c]) 
                 if c >= mapping_threshold:
                     lst.append([j,dx,c])
 
@@ -233,12 +248,16 @@ def findCorrSeq(desList,mapping_threshold=100):
             idx1, idx2 = lst[0][0],lst[1][0]
             dx_idx1, dx_idx2 = lst[0][1],lst[1][1]
 
-            if dx_idx1 < 0 and dx_idx2 > 0:
-                orderPair.append([idx1,i,idx2])
-            else:
-                orderPair.append([idx2,i,idx1])
-
-
+            if dx_idx1 < 0 :
+                if dx_idx2 > 0:
+                    orderPair.append([idx1,i,idx2])
+                else:
+                    orderPair.append([idx1,i])
+            elif dx_idx1 > 0:
+                if dx_idx2 < 0:   
+                    orderPair.append([idx2,i,idx1])
+                else:
+                    orderPair.append([i,idx1])
         print(orderPair)
     print(orderPair)
     rightSeq = getRightSeq(orderPair)
@@ -261,13 +280,20 @@ def getRightSeq(orderPair):
             graph[p[0]][p[1]] = 1
             graph[p[1]][p[2]] = 1
 
+    if np.sum(graph) != num_node - 1:
+        exit('the seq cannot connect all image, or cannot form unique order')
 
     sum_row = np.sum(graph, axis=1)
     end, = np.where(sum_row == 0)
+    if len(end) != 1:
+        exit('the seq cannot connect all image, or cannot form unique order')
+    
     backtrack = [int(end)]
 
     while len(backtrack) < num_node:
         before, = np.where(graph[:,backtrack[0]] == 1)
+        if len(before) != 1:
+            exit('the seq cannot connect all image, or cannot form unique order')
         backtrack.insert(0,int(before))
     return backtrack
 
@@ -302,15 +328,6 @@ def pairIdx2Coor(pairIdxList,desList,seq):
     pairCorrList = []
     for idx,p in enumerate(pairIdxList):
         l = []
-        # p = sorted(p, key=itemgetter(2)) # sorted by distance
-        # for idx1,idx2,d in p:
-        #     idx1 = int(idx1)
-        #     idx2 = int(idx2)
-        #     imgA_x = desList[idx][idx1][0]
-        #     imgA_y = desList[idx][idx1][1]
-        #     imgB_x = desList[idx+1][idx2][0]
-        #     imgB_y = desList[idx+1][idx2][1]
-        #     l.append([imgA_x,imgA_y,imgB_x,imgB_y])
         l = pairIdx2CoorSingle(p,desList,seq[idx],seq[idx+1])
         pairCorrList.append(np.array(l))
 
@@ -323,7 +340,7 @@ def produceFeature(imginput,existImg=True,featureDesMethod='simple'):
         x = preImg()
         # np.random.shuffle(x)
     else:
-        assert(imginput != None)
+        # assert(imginput != None)
         x = imginput
 
     if args.debug == 'T':
@@ -404,12 +421,26 @@ def produceFeature(imginput,existImg=True,featureDesMethod='simple'):
 def resaveImgsInCorrOrder(imgs, seq):
     for new_idx, old_idx in enumerate(seq):
         cv2.imwrite('%s/%d.png'%(args.data_dir, new_idx), imgs[old_idx])
+def printImgSeq(imgs,name,seq):
+    imgSeq = imgs[seq[0]].copy()
+    for i in range(1,len(seq)):
+        imgSeq = np.concatenate((imgSeq, imgs[seq[i]].copy()), axis=1)
+    cv2.imwrite('%s/%s.jpg'%(args.data_dir, name), imgSeq)
+    return
 
 if __name__ == '__main__':
     x = preImg()
-    pairCorrList,seq  = produceFeature(None,False,'simple')
-    if args.random_order == 'T':
+
+    if args.random_order == 'F':
+        pairCorrList,seq  = produceFeature(None,False,'simple')
+    
+    elif args.random_order == 'T':
+        # np.random.shuffle(x) 
+        # printImgSeq(x,'before_reorder',list(range(len(x))))
+        pairCorrList,seq  = produceFeature(x,True,'simple')
         resaveImgsInCorrOrder(x, seq)
+        printImgSeq(x,'after_reorder',seq)
+
     # seq is left to right
     for i in range(pairCorrList.shape[0]):
         feature_pairs = pairCorrList[i]
