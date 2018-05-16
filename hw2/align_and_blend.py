@@ -46,22 +46,22 @@ class Panorama():
                         self.img[self.ori_y+y,self.ori_x+x] = new_img[y,x]
         self.last_tail = self.ori_x + w1
         self.last_top, self.last_bottom = self.ori_y, self.ori_y + h1
-
+    
     def get_drift_direction(self):
         img = self.img
         for head in range(img.shape[1]):
             if np.sum(img[:,head]) != 0:
                 break
-        for tail in range(img.shape[1]):
+        for tail in range(1,img.shape[1]):
             if np.sum(img[:,-tail]) != 0:
                 break
-        for LT in range(img.shape[1]): # Left Top
+        for LT in range(img.shape[0]): # Left Top
             if np.sum(img[LT,head]) != 0:
                 break
-        for RT in range(img.shape[1]): # Right Top
+        for RT in range(img.shape[0]): # Right Top
             if np.sum(img[RT,-tail]) != 0:
                 break
-
+                
         m = (img.shape[0] - self.ori_h) / img.shape[1]
         if LT <= RT:
             # panorama goes down as x increase
@@ -69,10 +69,37 @@ class Panorama():
         else:
             # panorama goes up as x increase
             return -m, LT
+    
 
+        
     def drift_refine(self):
+        def get_h_margin(img, w_margin):
+            # to get h_maring accoring to panorama content
+            for LT in range(img.shape[0]): # Left Top
+                if np.sum(img[LT,w_margin]) != 0:
+                    break
+            for RT in range(img.shape[0]): # Right Top
+                if np.sum(img[RT,-w_margin]) != 0:
+                    break
+            top_margin = LT if LT > RT else RT
+            if top_margin > img.shape[0]*0.2:
+                top_margin = img.shape[0]*0.2
+
+            for LB in range(1,img.shape[0]): # Left Bottom
+                if np.sum(img[-LB,w_margin]) != 0:
+                    break
+            for RB in range(1,img.shape[0]): # Right Bottom
+                if np.sum(img[-RB,-w_margin]) != 0:
+                    break
+            bottom_margin = LB if LB > RB else RB
+            if bottom_margin > img.shape[0]*0.2:
+                bottom_margin = img.shape[0]*0.2
+
+            return top_margin, bottom_margin
+        
         # inverse warpping by y' = y + mx
         new_img = np.zeros((self.ori_h, self.img.shape[1], 3), dtype=np.uint8)
+        
         m, top = self.get_drift_direction()
         for warp_y in range(new_img.shape[0]):
             for warp_x in range(new_img.shape[1]):
@@ -81,8 +108,9 @@ class Panorama():
                     continue
                 new_img[warp_y, warp_x] = self.img[y, warp_x]
         # to crop the black margin
-        h_margin, w_margin = int(new_img.shape[0]*0.08), int(new_img.shape[1]*0.03)
-        self.img = new_img[h_margin:-h_margin, w_margin:-w_margin]
+        w_margin = int(new_img.shape[1]*0.03)
+        top_margin, bottom_margin = get_h_margin(new_img, w_margin)
+        self.img = new_img[top_margin:-bottom_margin, w_margin:-w_margin]
 
     def save(self, path):
         cv2.imwrite(path, self.img)
@@ -90,7 +118,7 @@ class Panorama():
 def main(args):
     pairwise_alignment = np.load('%s/pairwise_alignment.npy'%args.data_dir)
     panorama = Panorama(cv2.imread('%s/%d.png'%(args.data_dir, 0), -1))
-
+    
     for i in range(pairwise_alignment.shape[0]):
         img = cv2.imread('%s/%d.png'%(args.data_dir,i+1), -1)
         dx, dy = pairwise_alignment[i]
