@@ -47,16 +47,41 @@ class Panorama():
         self.last_tail = self.ori_x + w1
         self.last_top, self.last_bottom = self.ori_y, self.ori_y + h1
 
+    def get_drift_direction(self):
+        img = self.img
+        for head in range(img.shape[1]):
+            if np.sum(img[:,head]) != 0:
+                break
+        for tail in range(img.shape[1]):
+            if np.sum(img[:,-tail]) != 0:
+                break
+        for LT in range(img.shape[1]): # Left Top
+            if np.sum(img[LT,head]) != 0:
+                break
+        for RT in range(img.shape[1]): # Right Top
+            if np.sum(img[RT,-tail]) != 0:
+                break
+
+        m = (img.shape[0] - self.ori_h) / img.shape[1]
+        if LT <= RT:
+            # panorama goes down as x increase
+            return m, LT
+        else:
+            # panorama goes up as x increase
+            return -m, LT
+
     def drift_refine(self):
         # inverse warpping by y' = y + mx
         new_img = np.zeros((self.ori_h, self.img.shape[1], 3), dtype=np.uint8)
-        m = (self.img.shape[0] - self.ori_h) / self.img.shape[1]
+        m, top = self.get_drift_direction()
         for warp_y in range(new_img.shape[0]):
             for warp_x in range(new_img.shape[1]):
-                y = int(warp_y + warp_x * m)
+                y = int(warp_y + warp_x * m + top/2)
+                if y >= new_img.shape[0]:
+                    continue
                 new_img[warp_y, warp_x] = self.img[y, warp_x]
         # to crop the black margin
-        h_margin, w_margin = int(new_img.shape[0]*0.05), int(new_img.shape[1]*0.03)
+        h_margin, w_margin = int(new_img.shape[0]*0.08), int(new_img.shape[1]*0.03)
         self.img = new_img[h_margin:-h_margin, w_margin:-w_margin]
 
     def save(self, path):
