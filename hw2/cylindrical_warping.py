@@ -21,6 +21,8 @@ def load_focals(data_dir):
     with open('%s/focal.txt'%data_dir) as f:
         for line in f:
             line = line.rstrip().split(',')
+            if len(line) < 2:
+                break
             file_name, focal = line[0], float(line[1])
             focals[file_name] = focal
     return focals
