@@ -39,7 +39,8 @@ class Panorama():
                         if np.sum(self.img[self.ori_y+y,self.ori_x+x]) == 0: # margin caused by warpping
                             self.img[self.ori_y+y,self.ori_x+x] = new_img[y,x]
                         else:
-                            w = 2**(x / (self.last_tail-self.ori_x)) - 1
+#                             w = 2**(x / (self.last_tail-self.ori_x)) - 1
+                            w = x / (self.last_tail-self.ori_x)
                             self.img[self.ori_y+y,self.ori_x+x] *= (1-w)
                             self.img[self.ori_y+y,self.ori_x+x] += w * new_img[y,x]
                     else:
@@ -47,7 +48,7 @@ class Panorama():
         self.last_tail = self.ori_x + w1
         self.last_top, self.last_bottom = self.ori_y, self.ori_y + h1
     
-    def get_drift_direction(self):
+    def get_drift_direction_and_margin(self):
         img = self.img
         for head in range(img.shape[1]):
             if np.sum(img[:,head]) != 0:
@@ -65,10 +66,10 @@ class Panorama():
         m = (img.shape[0] - self.ori_h) / img.shape[1]
         if LT <= RT:
             # panorama goes down as x increase
-            return m, LT
+            return m, LT, head
         else:
             # panorama goes up as x increase
-            return -m, LT
+            return -m, LT, head
     
 
         
@@ -83,7 +84,7 @@ class Panorama():
                     break
             top_margin = LT if LT > RT else RT
             if top_margin > img.shape[0]*0.2:
-                top_margin = img.shape[0]*0.2
+                top_margin = int(img.shape[0]*0.2)
 
             for LB in range(1,img.shape[0]): # Left Bottom
                 if np.sum(img[-LB,w_margin]) != 0:
@@ -93,22 +94,21 @@ class Panorama():
                     break
             bottom_margin = LB if LB > RB else RB
             if bottom_margin > img.shape[0]*0.2:
-                bottom_margin = img.shape[0]*0.2
+                bottom_margin = int(img.shape[0]*0.2)
 
             return top_margin, bottom_margin
         
-        # inverse warpping by y' = y + mx
+        # inverse warpping by y = y' + mx
         new_img = np.zeros((self.ori_h, self.img.shape[1], 3), dtype=np.uint8)
         
-        m, top = self.get_drift_direction()
+        m, LT, w_margin = self.get_drift_direction_and_margin()
         for warp_y in range(new_img.shape[0]):
             for warp_x in range(new_img.shape[1]):
-                y = int(warp_y + warp_x * m + top/2)
+                y = int(warp_y + warp_x * m + LT/2)
                 if y >= new_img.shape[0]:
                     continue
                 new_img[warp_y, warp_x] = self.img[y, warp_x]
         # to crop the black margin
-        w_margin = int(new_img.shape[1]*0.03)
         top_margin, bottom_margin = get_h_margin(new_img, w_margin)
         self.img = new_img[top_margin:-bottom_margin, w_margin:-w_margin]
 
